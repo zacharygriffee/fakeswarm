@@ -25,7 +25,6 @@ export function once(emitter, event, timeoutMs = 100) {
 
 export async function waitFor(fn, timeoutMs = 100, intervalMs = 5) {
   const start = Date.now();
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (fn()) return true;
     if (Date.now() - start >= timeoutMs) return false;

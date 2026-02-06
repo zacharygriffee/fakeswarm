@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "test": "brittle \"test/**/*.test.js\"",
-    "lint": "echo 'no lint configured'"
+    "lint": "eslint \"src/**/*.js\" \"test/**/*.js\""
   },
   "keywords": [
     "hyperswarm",
@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "b4a": "^1.7.3",
-    "brittle": "^3.19.1"
+    "brittle": "^3.19.1",
+    "eslint": "^9.39.2"
   }
 }
