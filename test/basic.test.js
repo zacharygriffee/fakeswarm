@@ -15,8 +15,13 @@ test('basic connect sends data', async (t) => {
   swarmA.join(topic);
   swarmB.join(topic);
 
-  const [socketA] = await once(swarmA, 'connection', 500);
-  const [socketB] = await once(swarmB, 'connection', 500);
+  const [socketA, infoA] = await once(swarmA, 'connection', 500);
+  const [socketB, infoB] = await once(swarmB, 'connection', 500);
+
+  t.is(Buffer.isBuffer(infoA.publicKey), true, 'peerInfoA has publicKey');
+  t.is(Buffer.isBuffer(infoB.publicKey), true, 'peerInfoB has publicKey');
+  t.alike(socketA.remotePublicKey, infoA.publicKey, 'socketA remotePublicKey set');
+  t.alike(socketB.remotePublicKey, infoB.publicKey, 'socketB remotePublicKey set');
 
   const message = b4a.from('hello');
   const recv = once(socketB, 'data', 200);
@@ -170,6 +175,8 @@ test('client-only dials server-only on shared topic', async (t) => {
 
   t.is(clientInfo.initiator, true, 'client side initiator true');
   t.is(serverInfo.initiator, false, 'server side initiator false');
+  t.alike(clientSocket.remotePublicKey, clientInfo.publicKey, 'client socket remotePublicKey set');
+  t.alike(serverSocket.remotePublicKey, serverInfo.publicKey, 'server socket remotePublicKey set');
 
   // Basic data round-trip
   const recv = once(serverSocket, 'data', 200);

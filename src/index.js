@@ -113,9 +113,11 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
 
         ssLocal.rawStream.pipe(ssRemote.rawStream).pipe(ssLocal.rawStream);
 
+        const remotePublicKey = conn.publicKey ?? idEncoding.decode(conn.id);
+
         const peerInfo = {
             id: conn.id,
-            publicKey: conn.publicKey, // may be undefined if caller didn't provide; that's fine
+            publicKey: remotePublicKey,
             initiator: false
         };
 
@@ -125,6 +127,7 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
 
         ssLocal.once("open", () => {
             if (closing || closed) return;
+            ssLocal.remotePublicKey = remotePublicKey;
             emitter.emit("connection", ssLocal, peerInfo);
         });
 
@@ -163,11 +166,11 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
                 return;
             }
 
+            const remotePublicKey = idEncoding.decode(remotePeerId);
+
             const peerInfo = {
                 id: remotePeerId,
-                // We don't know remote publicKey unless they provided it in their _incoming handler,
-                // and we are intentionally not assuming more swarm shape than that.
-                publicKey: undefined,
+                publicKey: remotePublicKey,
                 initiator: true
             };
 
@@ -177,6 +180,7 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
 
             socket.once("open", () => {
                 if (closing || closed) return;
+                socket.remotePublicKey = remotePublicKey;
                 emitter.emit("connection", socket, peerInfo);
             });
         })().finally(() => {
