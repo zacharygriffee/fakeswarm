@@ -1,0 +1,38 @@
+{
+  "name": "fakeswarm",
+  "version": "0.1.0",
+  "description": "Deterministic in-memory fake hyperswarm for tests and demos.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "brittle \"test/**/*.test.js\"",
+    "lint": "echo 'no lint configured'"
+  },
+  "keywords": [
+    "hyperswarm",
+    "test",
+    "fake",
+    "noise"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:zacharygriffee/fakeswarm.git"
+  },
+  "dependencies": {
+    "@hyperswarm/secret-stream": "^6.9.1",
+    "hypercore-crypto": "^3.6.1",
+    "hypercore-id-encoding": "^1.3.0"
+  },
+  "devDependencies": {
+    "b4a": "^1.7.3",
+    "brittle": "^3.19.1"
+  }
+}
