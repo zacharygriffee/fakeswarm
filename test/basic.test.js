@@ -18,8 +18,8 @@ test('basic connect sends data', async (t) => {
   const [socketA, infoA] = await once(swarmA, 'connection', 500);
   const [socketB, infoB] = await once(swarmB, 'connection', 500);
 
-  t.is(Buffer.isBuffer(infoA.publicKey), true, 'peerInfoA has publicKey');
-  t.is(Buffer.isBuffer(infoB.publicKey), true, 'peerInfoB has publicKey');
+  t.is(b4a.isBuffer(infoA.publicKey), true, 'peerInfoA has publicKey');
+  t.is(b4a.isBuffer(infoB.publicKey), true, 'peerInfoB has publicKey');
   t.alike(socketA.remotePublicKey, infoA.publicKey, 'socketA remotePublicKey set');
   t.alike(socketB.remotePublicKey, infoB.publicKey, 'socketB remotePublicKey set');
 
@@ -224,4 +224,54 @@ test('server-only vs server-only yields no connections', async (t) => {
 
   await a.close();
   await b.close();
+});
+
+test('reconnect race with stale retention and duplicate connection', async (t) => {
+  const topics = new Map();
+  const net = {
+    reconnectRace: {
+      enabled: true,
+      staleRetentionMs: 30,
+      reconnectDelayMs: 5,
+      duplicateConnection: true
+    }
+  };
+
+  const swarmA = createFakeSwarm({ seed: b4a.alloc(32, 19), net }, topics);
+  const swarmB = createFakeSwarm({ seed: b4a.alloc(32, 20), net }, topics);
+  const topic = makeTopic('j');
+
+  const eventsA = [];
+  const eventsB = [];
+  swarmA.on('connection', (socket) => eventsA.push(socket));
+  swarmB.on('connection', (socket) => eventsB.push(socket));
+
+  swarmA.join(topic);
+  swarmB.join(topic);
+
+  const [sockA1] = await once(swarmA, 'connection', 500);
+  await once(swarmB, 'connection', 500);
+
+  // Force disconnect on A side
+  sockA1.destroy();
+
+  // Expect a quick reconnect with duplicate connection event while stale retained
+  await once(swarmA, 'connection', 500);
+  await once(swarmB, 'connection', 500);
+
+  t.is(eventsA.length >= 2, true, 'swarmA saw duplicate connection');
+  t.is(eventsB.length >= 2, true, 'swarmB saw duplicate connection');
+
+  // Connections map should converge to one entry after retention window
+  await swarmA.flush(200);
+  await swarmB.flush(200);
+  t.is(swarmA.connections.size, 1, 'swarmA converged to single connection');
+  t.is(swarmB.connections.size, 1, 'swarmB converged to single connection');
+
+  // New sockets differ from old
+  t.ok(eventsA[0] !== eventsA[1], 'swarmA sockets differ');
+  t.ok(eventsB[0] !== eventsB[1], 'swarmB sockets differ');
+
+  await swarmA.close();
+  await swarmB.close();
 });

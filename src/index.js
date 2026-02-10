@@ -2,10 +2,20 @@ import EventEmitter from "events";
 import idEncoding from "hypercore-id-encoding";
 import Krypto from "hypercore-crypto";
 import NoiseStream from "@hyperswarm/secret-stream";
+import { normalizeArgs } from "./normalize.js";
 
 const defaultTopics = new Map();
 
-function createFakeSwarm(seed = undefined, topics = defaultTopics) {
+function createFakeSwarm(seedOrOpts = undefined, topicsArg = defaultTopics) {
+    const { seed, net, topics } = normalizeArgs(seedOrOpts, topicsArg);
+
+    const reconnectRace = {
+        enabled: !!net?.reconnectRace?.enabled,
+        staleRetentionMs: net?.reconnectRace?.staleRetentionMs ?? 25,
+        reconnectDelayMs: net?.reconnectRace?.reconnectDelayMs ?? 10,
+        duplicateConnection: !!net?.reconnectRace?.duplicateConnection
+    };
+
     const keyPair = Krypto.keyPair(seed);
     const peerId = idEncoding.encode(keyPair.publicKey);
 
@@ -14,6 +24,13 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
 
     // remotePeerId -> Promise<void> (prevents duplicate concurrent dials)
     const connecting = new Map();
+
+    // remotePeerId -> array of stale sockets kept temporarily
+    const staleSockets = new Map();
+
+    // timers we await during flush/close for determinism
+    const retentionTimers = new Set();
+    const reconnectTimers = new Set();
 
     const emitter = new EventEmitter();
     const joinedTopics = new Set();     // all topics we joined (regardless of mode)
@@ -89,10 +106,44 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
         emitter.off(event, cb);
     }
 
+    function retainStale(peer, socket) {
+        if (!reconnectRace.enabled) return;
+        const timer = setTimeout(async () => {
+            retentionTimers.delete(timer);
+            await destroySocket(socket);
+            const arr = staleSockets.get(peer);
+            if (arr) {
+                staleSockets.set(peer, arr.filter((s) => s !== socket));
+                if (staleSockets.get(peer).length === 0) staleSockets.delete(peer);
+            }
+        }, reconnectRace.staleRetentionMs);
+        retentionTimers.add(timer);
+        const arr = staleSockets.get(peer) ?? [];
+        arr.push(socket);
+        staleSockets.set(peer, arr);
+    }
+
+    function scheduleReconnectTick() {
+        if (!reconnectRace.enabled) return;
+        const timer = setTimeout(() => {
+            reconnectTimers.delete(timer);
+            if (!closing && !closed) tick();
+        }, reconnectRace.reconnectDelayMs);
+        reconnectTimers.add(timer);
+    }
+
     function trackConnection(peer, socket) {
         const drop = () => {
-            connections.delete(peer);
-            emitter.emit("update");
+            const current = connections.get(peer)?.socket;
+            if (current === socket) {
+                connections.delete(peer);
+                emitter.emit("update");
+                retainStale(peer, socket);
+                scheduleReconnectTick();
+            } else if (reconnectRace.enabled) {
+                // stale socket closed after new one took over
+                retainStale(peer, socket);
+            }
         };
         socket.once("close", drop);
         socket.once("error", drop);
@@ -102,7 +153,10 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
         if (closing || closed) return;
         if (!conn || !conn.id) return;
         if (conn.id === peerId) return;
-        if (connections.has(conn.id)) return;
+        if (connections.has(conn.id)) {
+            if (!reconnectRace.duplicateConnection) return;
+            // allow duplicate event later; still accept for overlap
+        }
 
         // Guard: if we're already in-flight dialing this peer, don't also accept/construct.
         // (This is conservative; the dial-election below in loop() is the main duplication killer.)
@@ -143,7 +197,7 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
     async function dial(remotePeerId, makeConnection) {
         if (closing || closed) return;
         if (remotePeerId === peerId) return;
-        if (connections.has(remotePeerId)) return;
+        if (connections.has(remotePeerId) && !reconnectRace.duplicateConnection) return;
 
         if (!shouldDial(remotePeerId)) return;
         if (connecting.has(remotePeerId)) return;
@@ -161,7 +215,7 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
             if (!socket) return;
 
             // It's possible we raced and connected through the other side while awaiting.
-            if (connections.has(remotePeerId)) {
+            if (connections.has(remotePeerId) && !reconnectRace.duplicateConnection) {
                 if (socket?.destroy) await destroySocket(socket);
                 return;
             }
@@ -224,7 +278,7 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
             // Wait for any in-flight dial promises.
             await Promise.allSettled(Array.from(connecting.values()));
 
-            if (connecting.size === 0) {
+            if (connecting.size === 0 && retentionTimers.size === 0 && reconnectTimers.size === 0) {
                 stableZero += 1;
                 if (stableZero >= 2) return; // two consecutive quiet checks
             } else {
@@ -263,6 +317,10 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
             closing = true;
 
             if (tickTimer) clearTimeout(tickTimer);
+            for (const t of Array.from(retentionTimers)) clearTimeout(t);
+            for (const t of Array.from(reconnectTimers)) clearTimeout(t);
+            retentionTimers.clear();
+            reconnectTimers.clear();
 
             // Stop publishing our topics (prevents new dials toward us)
             for (const topicId of Array.from(publishedTopics)) {
@@ -279,6 +337,10 @@ function createFakeSwarm(seed = undefined, topics = defaultTopics) {
             await Promise.allSettled(
                 Array.from(connections.values()).map(({ socket }) => destroySocket(socket))
             );
+            await Promise.allSettled(
+                Array.from(staleSockets.values()).flat().map((socket) => destroySocket(socket))
+            );
+            staleSockets.clear();
 
             connections.clear();
             emitter.emit("update");

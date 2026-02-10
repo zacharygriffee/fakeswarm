@@ -15,6 +15,7 @@ Tests use [brittle](https://github.com/holepunchto/brittle) and live in `test/`.
 - **Backfill**: adding the first `connection` listener after a connection already exists re-emits it.
 - **Update event & discovery handle**: `update` fires on connect/disconnect; discovery handle methods are present and no-op as expected.
 - **Client/server mode opts**: client-only vs server-only connects; client-only vs client-only and server-only vs server-only do not connect.
+- **Reconnect race (opt-in)**: with `net.reconnectRace.enabled`, a disconnect followed by a quick reconnect can emit a duplicate connection while the stale socket is retained internally, then converges back to a single connection after the retention window.
 
 ## Debugging tips
 - Run a single test: `npx brittle test/basic.test.js -m "basic connect"`.

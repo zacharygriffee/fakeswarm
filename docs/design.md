@@ -22,6 +22,9 @@
   - `client` controls dialing on the topic.
 - Returns a lightweight discovery handle exposing `leave/destroy`, plus `refresh()` and `flushed()` no-ops for Hyperswarm API parity so callers don’t need conditional code in tests.
 
+## Network profile (opt-in)
+- `reconnectRace` (off by default): holds stale sockets for a short retention window, triggers a quick reconnect, and can optionally emit duplicate connection events during overlap. Stale sockets are retained internally (not in `connections`) and destroyed after `staleRetentionMs`; `flush()` waits for retention/reconnect timers for determinism.
+
 ## Tick loop
 - A 10ms `tick()` scans shared topics and triggers dials when a local topic matches a remote peer. Guards prevent self-connect and duplicate connects (`connections` and `connecting` maps).
 

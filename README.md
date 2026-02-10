@@ -47,8 +47,10 @@ Always call `close()` when done to unpublish topics and destroy sockets.
 
 ## API
 
-### createFakeSwarm(seed?, topics?)
-- `seed` (Buffer | Uint8Array | null): optional seed passed to `hypercore-crypto.keyPair` for deterministic keys.
+### createFakeSwarm(seedOrOpts?, topics?)
+- `seedOrOpts` can be:
+  - `Buffer | Uint8Array | null` (legacy seed) or
+  - `{ seed?, net? }`
 - `topics` (Map) optional shared topics map. By default a module-level Map is used so multiple swarms share the same space.
 
 Returns an object with:
@@ -67,6 +69,14 @@ Returns an object with:
 - `close()` / `destroy()`: unpublish, stop ticking, destroy sockets, and emit `close`.
 - `keyPair`: the generated keypair.
 - `id`: `idEncoding.encode(publicKey)` convenience string.
+
+#### Network profile (opt-in, default off)
+`net.reconnectRace` lets you simulate a quick disconnect/reconnect overlap:
+- `enabled` (boolean): default false. When false, behavior is unchanged.
+- `staleRetentionMs` (default 25): how long a closed socket is retained internally before destroy.
+- `reconnectDelayMs` (default 10): how soon a reconnect attempt is triggered.
+- `duplicateConnection` (boolean): if true, emit a second `connection` event for the new socket even while the stale one is retained.
+`connections` still exposes only the current socket per peer; stale sockets are kept internally and cleaned up after the retention window.
 
 ### Join / leave semantics
 - Joining registers this swarm in the shared topics map; peers that share a topic will connect.
