@@ -275,3 +275,80 @@ test('reconnect race with stale retention and duplicate connection', async (t) =
   await swarmA.close();
   await swarmB.close();
 });
+
+test('reconnect race without duplicate connection converges cleanly', async (t) => {
+  const topics = new Map();
+  const net = {
+    reconnectRace: {
+      enabled: true,
+      staleRetentionMs: 20,
+      reconnectDelayMs: 5,
+      duplicateConnection: false
+    }
+  };
+
+  const swarmA = createFakeSwarm({ seed: b4a.alloc(32, 21), net }, topics);
+  const swarmB = createFakeSwarm({ seed: b4a.alloc(32, 22), net }, topics);
+  const topic = makeTopic('k');
+
+  const eventsA = [];
+  swarmA.on('connection', (socket) => eventsA.push(socket));
+
+  swarmA.join(topic);
+  swarmB.join(topic);
+
+  const [sockA1] = await once(swarmA, 'connection', 500);
+  await once(swarmB, 'connection', 500);
+
+  sockA1.destroy();
+
+  const [sockA2] = await once(swarmA, 'connection', 500);
+  await once(swarmB, 'connection', 500);
+
+  t.is(eventsA.length, 2, 'only two connection events (initial + reconnect)');
+  t.ok(sockA1 !== sockA2, 'new socket differs from old');
+
+  await swarmA.flush(200);
+  await swarmB.flush(200);
+  t.is(swarmA.connections.size, 1);
+  t.is(swarmB.connections.size, 1);
+
+  await swarmA.close();
+  await swarmB.close();
+});
+
+test('multiple quick reconnects do not hang flush', async (t) => {
+  const topics = new Map();
+  const net = {
+    reconnectRace: {
+      enabled: true,
+      staleRetentionMs: 20,
+      reconnectDelayMs: 5,
+      duplicateConnection: false
+    }
+  };
+
+  const swarmA = createFakeSwarm({ seed: b4a.alloc(32, 23), net }, topics);
+  const swarmB = createFakeSwarm({ seed: b4a.alloc(32, 24), net }, topics);
+  const topic = makeTopic('l');
+
+  swarmA.join(topic);
+  swarmB.join(topic);
+
+  for (let i = 0; i < 3; i++) {
+    const [sockA] = await once(swarmA, 'connection', 500);
+    await once(swarmB, 'connection', 500);
+    sockA.destroy();
+  }
+
+  const start = Date.now();
+  await swarmA.flush(300);
+  await swarmB.flush(300);
+  const duration = Date.now() - start;
+
+  t.is(swarmA.connections.size, 1, 'converged to one connection');
+  t.ok(duration < 300, 'flush completed within timeout');
+
+  await swarmA.close();
+  await swarmB.close();
+});
