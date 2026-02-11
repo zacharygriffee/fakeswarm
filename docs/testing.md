@@ -21,3 +21,4 @@ Tests use [brittle](https://github.com/holepunchto/brittle) and live in `test/`.
 - Run a single test: `npx brittle test/basic.test.js -m "basic connect"`.
 - Increase timeouts by temporarily editing helper defaults if your environment is slow.
 - Add `console.log` inside tests or within `src/index.js` tick/flush to trace dial flow; remember to remove before publishing.
+- Use a fresh `topics = new Map()` per test file/case to prevent cross-test interference; the default module-level map is shared.

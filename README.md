@@ -81,6 +81,7 @@ Returns an object with:
 ### Join / leave semantics
 - Joining registers this swarm in the shared topics map; peers that share a topic will connect.
 - Leaving (or closing) removes the entry from the shared map to avoid ghost peers.
+- **Testing tip:** pass a fresh `topics = new Map()` per test to avoid cross-test bleed; the default module-level map is shared across all swarms in the process.
 
 ### Determinism notes
 - Dial election: only the lexicographically smaller peerId initiates (`peerId < remotePeerId`), preventing double connects.
